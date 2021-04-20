@@ -12,12 +12,30 @@ dataATAC <- dataATAC[-1, ]
 
 rownames(dataATAC) <- c(1:590650)
 featuresATAC <- data.frame(gene_short_name=paste("Peak[", rownames(data), "]" ))
+rownames(samplesATAC) <- c("SampleID", "CellType")
 
 dataATAC <- dataATAC[, c(-1,-2,-3)]
+samplesATAC <- samplesATAC[, !grepl("pHSC", samplesATAC[2, ])]
+data1ATAC <- dataATAC[ , c(colnames(dataATAC) %in% samplesATAC[1, ])]
+data1ATAC <- apply(data1ATAC, 2, as.numeric)
 
+unmapes_data_cells <- umap(t(apply(data1ATAC, 2, as.numeric)), n_neighbors = 5L, cores=4, knn = TRUE)
+clustered <- kmeans(unmapes_data_cells$layout, centers=15)
+clusters <- data.frame(clusters=clustered$cluster)
+
+result <- data.frame(x=unmapes_data_cells[["layout"]][,1], y=unmapes_data_cells[["layout"]][,2])
+clusters1 <- clusters[match(rownames(result), rownames(clusters)),] 
+clusters$SampleID <- rownames(clusters)
+
+result$SampleID <- rownames(result)
+result <- merge(result, clusters, by="SampleID")
+result <- merge(result, samples1, by="SampleID")
+
+ggplot(data=result, aes(x=x, y=y, color=as.factor(CellType)))+geom_point()+labs(title = "Clustering for ATAC-seq", x = "First component", y = "Second component", color="CellType" )
+ggsave(plot=last_plot(), device="pdf", filename="ATAC_umap_Cell_types.pdf", width=7, height=5)
 
 samplesATAC <- samplesATAC[ , grepl("HSC", samplesATAC[ 2, ]) | grepl("CD4", samplesATAC[2, ])]
-samplesATAC <- samplesATAC[, !grepl("pHSC", samplesATAC[2, ])]
+
 data1ATAC <- dataATAC[ , c(colnames(dataATAC) %in% samplesATAC[1, ])]
 data1ATAC <- apply(data1ATAC, 2, as.numeric)
 
@@ -46,7 +64,7 @@ expressed_genesATAC <- row.names(subset(fData(ATAC),
     num_cells_expr >= 4))
     
 diff_test_resATAC <- differentialGeneTest(ATAC[expressed_genesATAC,], fullModelFormulaStr = "~CellType", cores=5)
-HSMM_ordering_genesATAC <-
+ATAC_ordering_genes <-
     row.names(diff_test_resATAC)[order(diff_test_resATAC$qval)][1:1000]
     
 ATAC <- setOrderingFilter(ATAC,
@@ -54,33 +72,22 @@ ATAC <- setOrderingFilter(ATAC,
 ATAC <- reduceDimension(ATAC, method = 'DDRTree')
 ATAC <- orderCells(ATAC)
 plot_cell_trajectory(ATAC, color_by="CellType")
+
 # SAVE PLOT(OPTIONAL) 
 
-diff_test_res_ptATAC <- differentialGeneTest(ATAC[ATAC_ordering_genesATAC, ],
+diff_test_res_ptATAC <- differentialGeneTest(ATAC[ATAC_ordering_genes, ],
 					   fullModelFormulaStr = "~sm.ns(Pseudotime)")
-sig_gene_namesATAC <- row.names(subset(diff_test_res_ptATAC, qval < 0.01))
+sig_gene_namesATAC <- row.names(diff_test_res_ptATAC)[order(diff_test_res_ptATAC$qval)][1:100]
+
 plot_pseudotime_heatmap(ATAC[sig_gene_namesATAC,],
-                num_clusters = 3,
+                num_clusters = 2,
                 cores = 1,
                 show_rownames = T)
                 
                 
 #SAVE PLOT
 save(ATAC, file="ATACseq.Rdata")
-unmapes_data_cells <- umap(t(ATAC@assayData[["exprs"]]), n_neighbors = 5L, cores=4, knn = TRUE)
-clustered <- kmeans(unmapes_data_cells$layout, centers=15)
 
-result <- data.frame(x=unmapes_data_cells[["layout"]][,1], y=unmapes_data_cells[["layout"]][,2])
-clusters1 <- clusters[match(rownames(result), rownames(clusters)),] 
-clusters$SampleID <- rownames(clusters)
-
-result$SampleID <- rownames(result)
-result <- merge(result, clusters, by="SampleID")
-result <- merge(result1, samples1, by="SampleID")
-
-ggplot(data=result1, aes(x=x, y=y, color=as.factor(CellType)))+geom_point()+labs(title = "Clustering for ATAC-seq", x = "First component", y = "Second component", color="CellType" )
-ggsave(plot=last.plot(), device="pdf", filename="ATAC_umap_Cell_types.pdf", width=7, height=5)
- 
 #FOR DIFFERENTIAL GENE EXPRESSIONS
 dataRNA <- read.table("GSE74246_RNAseq_All_Counts.txt")
 samplesRNA <- read.table("sampleInfoRNA.txt")
@@ -93,26 +100,49 @@ colnames(dataRNA) <- dataRNA[1, ]
 dataRNA <- dataRNA[-1, ]
 
 rownames(dataRNA) <- dataRNA[ , 1] 
-featuresRNA <- data.frame(gene_short_nameRNA=data[, 1])
+featuresRNA <- data.frame(gene_short_name=dataRNA[, 1])
+rownames(samplesRNA) <- c("SampleID", "CellType")
 
 dataRNA <- dataRNA[, -1]
-
-
-sampleRNA <- samplesRNA[ , grepl("HSC", samplesRNA[ 2, ]) | grepl("CD4", samplesRNA[2, ])]
 samplesRNA <- samplesRNA[, !grepl("pHSC", samplesRNA[2, ])]
-data1RNA <- data[ , c(colnames(data) %in% samplesRNA[1, ])]
+data1RNA <- dataRNA[ , c(colnames(dataRNA) %in% samplesRNA[1, ])]
+data1RNA <- apply(data1RNA, 2, as.numeric)
+
+unmapes_data_cells <- umap(t(data1RNA), n_neighbors = 5L, cores=4, knn = TRUE)
+clustered <- kmeans(unmapes_data_cells$layout, centers=15)
+clusters <- data.frame(clusters=clustered$cluster)
+result <- data.frame(x=unmapes_data_cells[["layout"]][,1], y=unmapes_data_cells[["layout"]][,2])
+clusters1 <- clusters[match(rownames(result), rownames(clusters)),] 
+clusters$SampleID <- rownames(clusters)
+
+
+
+result$SampleID <- rownames(result)
+result <- merge(result, clusters, by="SampleID")
+samples1RNA <- data.frame(t(samplesRNA))
+result <- merge(result,samples1RNA , by="SampleID")
+
+ggplot(data=result, aes(x=x, y=y, color=as.factor(CellType)))+geom_point()+labs(title = "Clustering for RNA-seq", x = "First component", y = "Second component", color="CellType" )
+ggsave(plot=last_plot(), device="pdf", filename="RNA_umap_Cell_types.pdf", width=7, height=5)
+
+
+
+samplesRNA <- samplesRNA[ , grepl("HSC", samplesRNA[ 2, ]) | grepl("CD4", samplesRNA[2, ])]
+
+data1RNA <- data1RNA[ , c(colnames(data1RNA) %in% samplesRNA[1, ])]
 data1RNA <- apply(data1RNA, 2, as.numeric)
 
 counts <- c()
-len <- nrow(data1)
+len <- nrow(data1RNA)
 for(i in 1:len){
-	counts <- c(counts, sum(data1RNA[i, ] > 5 ))
-	}
+  counts <- c(counts, sum(data1RNA[i, ] > 5 ))
+}
 
 featuresRNA$num_cells_expr <- counts
+
 featRNA <- AnnotatedDataFrame(data=featuresRNA)
 
-df1 <- data.frame(x=colnames(data1))
+df1 <- data.frame(x=colnames(data1RNA))
 samples1RNA <- samplesRNA[ , match(df1$x, samplesRNA[ 1, ])] 
 rownames(samples1RNA) <- c("SampleID", "CellType")
 samples1RNA <- data.frame(t(samples1RNA))
@@ -140,27 +170,17 @@ plot_cell_trajectory(RNA, color_by="CellType")
 
 
 diff_test_res_ptRNA <- differentialGeneTest(RNA[RNA_ordering_genes, ],
-					   fullModelFormulaStr = "~sm.ns(Pseudotime)")
-sig_gene_namesRNA <- row.names(subset(diff_test_res_ptRNA, qval < 0.01))
-plot_pseudotime_heatmap(RNA[sig_gene_namesRNA,],
-                num_clusters = 3,
-                cores = 1,
-                show_rownames = T)
-                
-unmapes_data_cells <- umap(t(RNA@assayData[["exprs"]]), n_neighbors = 5L, cores=4, knn = TRUE)
-clustered <- kmeans(unmapes_data_cells$layout, centers=15)
+                                            fullModelFormulaStr = "~sm.ns(Pseudotime)", cores=5)
 
-result <- data.frame(x=unmapes_data_cells[["layout"]][,1], y=unmapes_data_cells[["layout"]][,2])
-clusters1 <- clusters[match(rownames(result), rownames(clusters)),] 
-clusters$SampleID <- rownames(clusters)
+sig_gene_namesRNA <- row.names(diff_test_res_ptRNA)[order(diff_test_res_ptRNA$qval)][1:100]
 
-result$SampleID <- rownames(result)
-result <- merge(result, clusters, by="SampleID")
-result <- merge(result1, samples1, by="SampleID")
 
-ggplot(data=result1, aes(x=x, y=y, color=as.factor(CellType)))+geom_point()+labs(title = "Clustering for RNA-seq", x = "First component", y = "Second component", color="CellType" )
-ggsave(plot=last.plot(), device="pdf", filename="RNA_umap_Cell_types.pdf", width=7, height=5)
- 
+plot_pseudotime_heatmap(RNA[sig_gene_namesRNA, ],
+                        num_clusters = 2,
+                        cores = 1,
+                        show_rownames = T)
+
+
 
 
 
